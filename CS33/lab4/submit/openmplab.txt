@@ -1,0 +1,349 @@
+Sagar Doshi
+UID: 604901376
+openmplab.txt
+
+The first step when optimizing code is to figure out WHAT you want to optimize to get the most speed up.
+We can use the GPROF tool to accomplish this using the following commands.
+
+$ make seq GPROF=1
+$ ./seq
+FUNC TIME : 0.795283 // This will be our baseline time that we can compare to.
+TOTAL TIME : 2.989198
+$ gprof seq | less
+
+Flat profile:
+
+Each sample counts as 0.01 seconds.
+  %   cumulative   self              self     total
+ time   seconds   seconds    calls  ms/call  ms/call  name
+ 78.19      0.57     0.57       15    38.05    38.88  func1		// this is where we want to focus.
+  8.92      0.64     0.07  5177344     0.00     0.00  rand2
+  4.12      0.67     0.03   491520     0.00     0.00  findIndexBin
+  1.37      0.68     0.01       15     0.67     0.67  func2
+  1.37      0.69     0.01       15     0.67     2.67  func5
+  1.37      0.70     0.01        2     5.01     5.01  init
+  1.37      0.71     0.01        1    10.01    62.74  addSeed
+  1.37      0.72     0.01        1    10.01    10.01  imdilateDisk
+  1.37      0.73     0.01                             sequence
+  0.69      0.73     0.01       15     0.33     0.33  rand1
+  0.00      0.73     0.00   983042     0.00     0.00  round
+  0.00      0.73     0.00       16     0.00     0.00  dilateMatrix
+  0.00      0.73     0.00       15     0.00     0.00  func3
+  0.00      0.73     0.00       15     0.00     0.00  func4
+  0.00      0.73     0.00        2     0.00     0.00  get_time
+  0.00      0.73     0.00        1     0.00     0.00  elapsed_time
+  0.00      0.73     0.00        1     0.00     0.00  fillMatrix
+  0.00      0.73     0.00        1     0.00     0.00  func0
+  0.00      0.73     0.00        1     0.00     0.00  getNeighbors
+
+  As we see from this helpful GPROF table the majority of the time of running the program is spend in func1.
+  Therefore, to achieve 3.5x speedup, we want to devote the majority of our time optimizing this portion of the
+  code. It is also a good idea to optimize the inner-most part of nested for loops as these are the majority of operations
+  being performed, but we want outer parallization when possible as this parallizes the most number of operations.
+  
+  We also have to be aware that threads themselves entail a lot of overhead, so having threads propagate a large amount could make our program run even slower!
+  
+  What we are aiming for is a program that takes approximately less than 0.25 seconds for func. If we have achieved this, then we have achieved a 3.5x speedup. Note that
+  we can't get exact measurements as the run time of the program varies betweeen runs, so a speedup of approx 3.5 is desired.
+  
+  We don't use the helper function omp_set_num_threads(); just yet. OPENMP automatically chooses the default number of threads based upon the number of cores
+  on the SEASNET server (which is either 16 or 32 depending on the server you're on.) We can play around with this later to try and produce better speedup.
+  
+  NOTE : ALL THESE MEASUREMENTS WERE DONE ON lnxsrv09 via (pretty bad) dorm wifi
+
+  The first easy parallization that can be made is seeen are in the following chunk of code in func1
+  
+   // We can parallelize this accumulation process to make it like vector addition
+        #pragma omp parallel for
+        for(i = 0; i < n; i++){
+                arrayX[i] += 1 + 5*rand2(seed, i);
+                arrayY[i] += -2 + 2*rand2(seed, i);
+        }
+		
+  Parallelizing these processes essentially make this iterative adding to an array more akin to vector addition where we add all these components at once.
+  
+  Running make check we get the following output: (note that this was repeated multiple times to get an average run time, and all reported terminal time outputs are ~average
+  average run times from multiple runs.
+  
+  [doshi@lnxsrv09 ~/CS33/lab4/openmplab]$ make check
+	gcc -o omp  -O3 -fopenmp filter.c main.c func.c util.c -lm
+	cp omp filter
+	./filter
+	FUNC TIME : 0.703681
+	TOTAL TIME : 2.666331
+	diff --brief correct.txt output.txt
+
+
+We have achieved a func speedup of about 0.8 seconds FUNC just from this optimization, so we're moving in the right direction!
+
+We can make a similar easy optimization in func0 (same idea of vector addition). This was just easy to implement though it doens't contribute a lot to speedup because func0 isn't
+the bottleneck of our program.
+
+void func0(double *weights, double *arrayX, double *arrayY, int xr, int yr, int n)
+{
+        int i;
+        #pragma omp parallel for
+        for(i = 0; i < n; i++){
+                weights[i] = 1/((double)(n));
+                arrayX[i] = xr;
+                arrayY[i] = yr;
+        }
+}
+
+But this didn't really yield much speedup as the overall run time of this program doesn't spend much time in func0.
+
+What we really want to parallelize is the large for looop in function 1 which we can do by the following
+
+ # pragma omp parallel for firstprivate(index_X, index_Y, j)
+        for(i = 0; i<n; i++){
+                for(j = 0; j < Ones; j++){
+                        index_X = round(arrayX[i]) + objxy[j*2 + 1];
+                        index_Y = round(arrayY[i]) + objxy[j*2];
+                        index[i*Ones + j] = fabs(index_X*Y*Z + index_Y*Z + iter);
+                        if(index[i*Ones + j] >= max_size)
+                                index[i*Ones + j] = 0;
+                }
+                probability[i] = 0;
+
+                for(j = 0; j < Ones; j++) {
+                        probability[i] += (pow((array[index[i*Ones + j]] - 100),2) -
+                                                          pow((array[index[i*Ones + j]]-228),2))/50.0;
+                }
+                probability[i] = probability[i]/((double) Ones);
+        }
+
+To see the speedup:
+[doshi@lnxsrv09 ~/CS33/lab4/openmplab]$ make check
+gcc -o omp  -O3 -fopenmp filter.c main.c func.c util.c -lm
+cp omp filter
+./filter
+FUNC TIME : 0.235105
+TOTAL TIME : 2.342450
+
+and WOW we have already achieved the ~3.5x speedup for FUNC.
+THIS IS THE KEY PARALLELIZATION because we want to parallelize at the top level of the for loop while simplifying computations
+on the inner portion of the for loop.
+
+The key thing to note is that we have to make index_X, index_Y, and j firstprivate because of the fact that separate threads
+need separate copies of these variables.
+
+We can hoist certain calculations out of the inner for loop to get a small speedup, but we now must mark them firstprivate
+
+# pragma omp parallel for firstprivate(index_X, index_Y, index_X_prime, index_Y_prime, j)
+        for(i = 0; i<n; i++){
+                // hoist calculation outside the for loop
+                index_X_prime = round(arrayX[i]);
+                index_Y_prime = round(arrayY[i]);
+		}
+
+Note that the iterator (i) is by default private by openmp so we don't need to explicity make it private.
+
+To check for memory leaks we do the following:
+
+[doshi@lnxsrv09 ~/CS33/lab4/openmplab]$ make
+gcc -o omp  -O3 -fopenmp filter.c main.c func.c util.c -lm
+cp omp filter
+[doshi@lnxsrv09 ~/CS33/lab4/openmplab]$ make seq MTRACE=1
+gcc -o seq  -O3 -DMTRACE filter.c main.c func.c util.c -lm
+[doshi@lnxsrv09 ~/CS33/lab4/openmplab]$ make checkmem
+mtrace filter mtrace.out || true
+No memory leaks.
+				
+[doshi@lnxsrv09 ~/CS33/lab4/openmplab]$ make check
+gcc -o omp  -O3 -fopenmp filter.c main.c func.c util.c -lm
+cp omp filter
+./filter
+FUNC TIME : 0.234025
+TOTAL TIME : 2.274533
+diff --brief correct.txt output.txt
+
+At this point the speed up is approximately 0.234025/0.795283 ~ 3.39 times with no memory leaks, and correct ouptut. We can do slightly better.
+
+We can optimize func2 like the following
+
+void func2(double *weights, double *probability, int n)
+{
+        int i;
+        double sumWeights=0;
+
+        # pragma omp parallel for reduction(+:sumWeights)
+        for(i = 0; i < n; i++) {
+                weights[i] = weights[i] * exp(probability[i]);
+                sumWeights += weights[i];
+        }
+        for(i = 0; i < n; i++)
+                weights[i] = weights[i]/sumWeights;
+}
+
+We need to use the reduction functionality of openMP because of the fact that  sumWeights is acting as an acccumulator.
+We don't need to use firstprivate in this case.
+What func 2 is doing is basically normallizing an array of probability weights.
+
+After this optimization we get the following
+
+[doshi@lnxsrv09 ~/CS33/lab4/openmplab]$ make check
+gcc -o omp  -O3 -fopenmp filter.c main.c func.c util.c -lm
+cp omp filter
+./filter
+FUNC TIME : 0.220340
+TOTAL TIME : 2.247253
+diff --brief correct.txt output.txt
+
+[doshi@lnxsrv09 ~/CS33/lab4/openmplab]$ make
+gcc -o omp  -O3 -fopenmp filter.c main.c func.c util.c -lm
+cp omp filter
+[doshi@lnxsrv09 ~/CS33/lab4/openmplab]$ make checkmem
+mtrace filter mtrace.out || true
+No memory leaks.
+
+So we have a slighlty better speed up of .795/.220 = 3.61 times as fast.
+
+We have achieved what we wanted so any optimizations on top of this are just icing on the cake. 
+
+We expect diminishing returns on optimizing non critical sections of the code as they simply do not have as large
+of an impact on the program runtime.
+
+We can optimize func3 with the same reduction technique. A tiny amount of speedup is observed.
+
+
+void func3(double *arrayX, double *arrayY, double *weights, double *x_e, double *y_e, int n)
+{
+        double estimate_x=0.0;
+        double estimate_y=0.0;
+    int i;
+
+        # pragma omp parallel for reduction(+:estimate_x,estimate_y)
+        for(i = 0; i < n; i++){
+                estimate_x += arrayX[i] * weights[i];
+                estimate_y += arrayY[i] * weights[i];
+        }
+
+        *x_e = estimate_x;
+        *y_e = estimate_y;
+
+}
+
+[doshi@lnxsrv09 ~/CS33/lab4/openmplab]$ make check
+gcc -o omp  -O3 -fopenmp filter.c main.c func.c util.c -lm
+cp omp filter
+./filter
+FUNC TIME : 0.219354
+TOTAL TIME : 2.292312
+
+
+[doshi@lnxsrv09 ~/CS33/lab4/openmplab]$ make memcheck
+make: *** No rule to make target `memcheck'.  Stop.
+[doshi@lnxsrv09 ~/CS33/lab4/openmplab]$ make checkmem
+mtrace filter mtrace.out || true
+No memory leaks.
+
+Returning to function 1 we can do some more hoisting, but remembering that we may need to add to our firstprivate variables.
+
+ # pragma omp parallel for firstprivate(array_index, index_X, index_Y, index_X_prime, index_Y_prime, j)
+        for(i = 0; i<n; i++){
+                // hoist calculation outside the for loop
+                index_X_prime = round(arrayX[i]);
+                index_Y_prime = round(arrayY[i]);
+                array_index = i*Ones;
+                for(j = 0; j < Ones; j++){
+                        index_X = index_X_prime + objxy[j*2 + 1];
+                        index_Y = index_Y_prime + objxy[j*2];
+                        index[array_index + j] = fabs(index_X*Y*Z + index_Y*Z + iter);
+                        if(index[array_index + j] >= max_size)
+                                index[i*Ones + j] = 0;
+                }
+                probability[i] = 0;
+
+                for(j = 0; j < Ones; j++) {
+                        probability[i] += (pow((array[index[array_index + j]] - 100),2) -
+                                                          pow((array[index[array_index + j]]-228),2))/50.0;
+                }
+                probability[i] = probability[i]/((double) Ones);
+        }
+
+
+[doshi@lnxsrv09 ~/CS33/lab4/openmplab]$ make check
+gcc -o omp  -O3 -fopenmp filter.c main.c func.c util.c -lm
+cp omp filter
+./filter
+FUNC TIME : 0.215277
+TOTAL TIME : 2.262206
+diff --brief correct.txt output.txt
+[doshi@lnxsrv09 ~/CS33/lab4/openmplab]$ make checkmem
+mtrace filter mtrace.out || true
+No memory leaks.
+
+Moving on to func4 we make the following parallelization
+
+void func4(double *u, double u1, int n)
+{
+        int i;
+
+        # pragma omp parallel for firstprivate(u, n, u1)
+        for(i = 0; i < n; i++){
+                u[i] = u1 + i/((double)(n));
+        }
+}
+
+
+[doshi@lnxsrv09 ~/CS33/lab4/openmplab]$ vi func.c
+[doshi@lnxsrv09 ~/CS33/lab4/openmplab]$ make check
+gcc -o omp  -O3 -fopenmp filter.c main.c func.c util.c -lm
+cp omp filter
+./filter
+FUNC TIME : 0.217495
+TOTAL TIME : 2.256917
+diff --brief correct.txt output.txt
+[doshi@lnxsrv09 ~/CS33/lab4/openmplab]$ make checkmem
+mtrace filter mtrace.out || true
+No memory leaks.
+
+Finally we parallelize function 5
+
+
+void func5(double *x_j, double *y_j, double *arrayX, double *arrayY, double *weights, double *cfd, double *u, int n)
+{
+        int i, j;
+
+        for(j = 0; j < n; j++){
+                //i = findIndex(cfd, n, u[j]);
+                i = findIndexBin(cfd, 0, n, u[j]);
+                if(i == -1)
+                        i = n-1;
+                x_j[j] = arrayX[i];
+                y_j[j] = arrayY[i];
+
+        }
+
+        # pragma omp paralllel for firstprivate(n, x_j, y_j)
+        for(i = 0; i < n; i++){
+                arrayX[i] = x_j[i];
+                arrayY[i] = y_j[i];
+                weights[i] = 1/((double)(n));
+        }
+}
+
+
+
+FUNC TIME : 0.215011
+TOTAL TIME : 2.232306
+diff --brief correct.txt output.txt
+[doshi@lnxsrv09 ~/CS33/lab4/openmplab]$ make check
+gcc -o omp  -O3 -fopenmp filter.c main.c func.c util.c -lm
+cp omp filter
+./filter
+FUNC TIME : 0.226223
+TOTAL TIME : 2.300694
+diff --brief correct.txt output.txt
+[doshi@lnxsrv09 ~/CS33/lab4/openmplab]$ make checkmem
+mtrace filter mtrace.out || true
+No memory leaks.
+
+
+The diminishing returns from optimizing the other functions are as expected, but given the high standard deviation in averaging
+the program run time, they seem to at least reduce variation in run time. Using our best average run time with the parallelizations
+we achieved a speed up of 
+
+0.795 / 0.215 = 3.7x speedup which is pretty solid.
+
+

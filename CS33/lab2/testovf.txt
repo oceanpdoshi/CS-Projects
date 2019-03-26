@@ -1,0 +1,46 @@
+Sagar Doshi
+UID : 604901376
+
+testovf.txt
+
+
+Source Code:
+
+_Bool
+  testovf (long n)
+  {
+    return n + 9223372036854775807 < n;
+  }
+
+
+(1) Compiled with GCC -O2
+
+testovf:
+.LFB0:
+        .cfi_startproc
+        xorl    %eax, %eax
+        ret
+
+		
+(2)Compiled with GCC -O2 -fwrapv
+testovf:
+.LFB0:
+        .cfi_startproc
+        movabsq $9223372036854775807, %rax
+        addq    %rdi, %rax
+        cmpq    %rdi, %rax
+        setl    %al
+        ret
+
+		
+(3)Compiled with GCC -O2 -fsanitize=undefined
+testovf:
+.LFB0:
+        .cfi_startproc
+        xorl    %eax, %eax
+        ret
+
+		
+The result from (1) makes sense as GCC senses that a very large, positive overflow is going to occur, so it just returns 0 because n plus a very large positive number SHOULD be less than n.
+The result from (2) makes sense as GCC is allowing overflow to occur, and it then actually goes through and does the operation n + 9223372036854775807 before comparing it. I presume that it takes the absolute value so that no wierd sign change occurs because of the overflow in 9223372036854775807.
+The result from (3) is surprising as without any sanitizing, gcc still defaults to just returning 0 as in (1). That being said, the default checking of GCC knows that no matter what, adding a positive number to a long will always yield a number greatger than the original, so this is likely an optimization by gcc rather than error-checking behavior.

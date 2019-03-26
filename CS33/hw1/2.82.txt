@@ -1,0 +1,16 @@
+A.) This isnt' always true, for example when x is INT_MIN. -x = INT_MIN. so for any y (if x == INT_MIN), this equality won't hold true.
+
+B.) This is always true regardless of the overflow. Mathetmatically, if we convert " << 4", that is the same thing as multiplying by 2^4. And by simplifying the left expression we get the same mathematical expression as the right. The only real concern is the overflow behavior.
+
+C.) This is always true Though the not operator isn't directly distributable, the effect of adding the 1 accounts for the difference in using the bitwise not operator.
+
+D.) This is always true, multiply both sides by (-1). We know that negating unsigned addition/subtraction doesn't affect the result. => the left and right side are completely equivalent.
+
+E.) This is always true, when you right shift arithmetically you may lose the least significant bits, but you get back the the magnitude when shifting back to the left. However by losing the least significant bits, you're guaranteed that you're number is at <= the original. LF
+
+F.) This is always true. If the most significant digit of the x (and thus ux) is 0, then the & statement evaluates to 0, and the two bit representations are clearly the same. LF
+If the most significant bit is 1, then x has a 1 added as the most significant bit via arithmetic right shifiting, and the unsigned x has a 0 added via logical right shifting. However, to make up this difference LF
+the & expression will get the most significant bit of ux, and thus will re-add the most significant digit (being a 1 in this case) back to the binary expression. Thus, this always evaluates to true. LF
+
+G.) This is NOT always true. It does always work for positive numbers when the most significant digit of the int binary representation is 0 as then the masking effect of & 7 (getting the last 3 digits) is the same effect as & 8, which on a positive number just returns 00000.....0aaa, where aaa is the last 3 digits.
+HOWEVER, for NEGATIVE numbers, the % operator places a 1 in at the 3rd spot (2^3 = 8) and the most significant digit is a 1 meaning that the modulo result will stay negative (as expected). & 7 will always return 0 or a positive number as it just imposes 0s for all the bits excepot the last 3 meaning it is impossible to be equiavlent. Ex : -9 % 8 = -1, -9 & 7 = 7;

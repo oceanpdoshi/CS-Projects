@@ -1,0 +1,21 @@
+Sagar Doshi 
+UID: 604901376
+random.txt
+
+Note : assuming -frwapv
+
+A) This is always correct. Both floats and doubles have enough bits to represent integers, so there is no danger of an overflow/underflow/rounding in this case.
+
+B) This is NOT always correct. Consider x=INT_MIN, y > 0. In this case, dx - dy will give you the numerically correct answer as doubles can represent INT_MIN without an issue. However, x-y will negatively overflow. 
+No error will be thrown because WE ARE ASSUMING -FWRAPV, but you wont' necessarily get the mathematically correct answer.
+
+C) This is always NOT always  true. Normally we would say floating point addition is NOT assosciative, but that is not sufficient proof in this case as all the doubles dx, dy, and dz are all based upon integers meaning that they don't have any decimal component that could be rounded differently depending on order. However, because we are using -fwrapv, the order in which overflow occurs could change the answer. suppose dx + dy overflows to 3, then adding dz will obviously yield a mathematically incorrect answer, but this mathematically incorrect answer does not necessarily have to be equivalent to dy + dz which suppose overflows to 5 then adding dx does not have to be equivalent to LHS of the equality.
+
+If we were NOT using -frwapv, then this would be always true, as overflow would just go to +-infinity which would be equivalent on both sides. (Can't obtain a NaN in this case). 
+
+D) NOT always correct. We can't just say floating point multilplication is non-assosciative as all the doubles dx,dy, dz  are based upon integers meaning they don't ahve a decimal point to get rounded off. That being said, we are using -frapv which overrides the normal overflow to +- infinity. The order of overflow now matters as just like the addition in part C, which part of the multiplication wraps around first will change the subsequent multiplication. Because the
+order of overflow now matters with -frapv, THIS IS NOT always true.
+
+If we were NOT using -frwapv, then this would be always true as overflow would always just go to +- infinity which would be equivalent on both sides. (Can' tget NaN in this case either).
+
+E) NOT always correct. Let dx != 0, dz = 0. In this case, dx/dx will evaluate to 1, but dz will evaluate to NaN which always make comparisons evaluate to false. 

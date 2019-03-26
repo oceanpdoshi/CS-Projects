@@ -1,0 +1,50 @@
+Sagar Doshi
+UID: 604901376
+
+pexexlab.txt
+
+The purpose of this lab was to get more familiar with gdb and to practice tracing through the machine execution of a program.
+
+The first step was to navigate using 'cd' to ~eggert/src/emacs-26.1/src/data.c.
+
+The source file was used as a reference to "see where u are" while debugging with gdb, so this was placed in a window to the side.
+
+The second step was to navigate to ~eggert/bin64/bin/emacs-26.1 using 'cd', this was the executable to debug using gdb.
+
+(initally i made hte mistake of trying to run gdb on the data.c file, but quickly realized whoops, I need to run it on the executable)
+
+The following commands were used.
+
+1)gdb emacs-26.1
+2)setargs -Q -batch -eval '(print (* 1250284240 -1844255039))'
+3)set disassemble-next-line on
+4)break Ftimes
+5)run
+
+The first command starts the debugger with the emacs-26.1 executable file specified as the executable file
+The second command makes it so that the executable is runwith the parameters specified in the lab specification.
+	I originally made a mistake in  running the program without the arguments, but I realized that running the program with arguments could be done with this command.
+The third command makes it so that gdb prints out the disassembled lines of execution, making it easier to see where you during program execution.
+The fourth command sets a breakpoint at Ftimes, as that is the start of the relevant portion of the code. **
+The fifth line runs the code.
+
+**by relevant, I mean the part of the code  that I actually want to debug, not the other portion of the executable that are run in addition to Ftimes.
+I know that I am at the end of the relvant part of the code when arith_driver returns, because Ftimes returns what arith_driver returns (this is seen in the source code.)
+
+Once the code reached  the break point, the following instructions were repeated.
+
+1)info reg
+2)si
+3)info reg
+
+(occasionally display/i $pc was used to display the next instruction to be used.)
+
+Repeating these three instructions showed the register, executed one machine instrcution, and then showed the registers.
+THis enabled me to see the effect executing just one machine instruction had on all the relevant registers.
+Using the information provided by GDB, I was able compmlete the trace.
+
+
+To find out where certain portions of the EMACS source code were going, I used the debugger and stepped through the srouce code using the step instruciton to find out where "most-negative-fixnum" originated from. 
+I first made the  mistake of trying to not use the next instruction as well trying to step through the machine code, I quickly realized that if I wanted to find anything in a timely manner, I needed ot use the more "aggresive" debugger commands.
+
+For the integer overflow, I just compiled a .c file containing the function in quesstion, and I used thee -S command to look at the assembly generated with the respective compiler options the question asked.

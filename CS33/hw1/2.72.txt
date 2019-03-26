@@ -1,0 +1,5 @@
+A.)When a signed integer is subtracted from an unsigned integer, the result is always an unsigned integer because of the implicit promotion that occcurs in C.
+Because the result is an unsigned integer, this implies that the conditional expression is always satsified as unsigned integers are (by definition) >= 0.
+
+B.) if (maxbytes - ((int) sizeof(val)) >= 0); 
+We can use type casting to avoid this issue.

@@ -1,0 +1,22 @@
+A = 9
+B = 5
+
+The assembly code first extends t, an int, to long, and it shows that t is at an offset of 8. This leaves 8 bytes for the charr array[B], and because  the sizeof(Char) is 1, B<=8. However,
+because the alignment of t (an int) is 4, we know that 5 <= B <= 8 as that much memory would not have been allcoated as the max amount of junk to get to an int aligment (4) is 3 bytes of junk. 
+
+The assembly code then adds u, at an offset of 32, which is stored in %rax. We know that because t is at an offset 8 and is an int, 8 + 4 = 12 meaning that short array[A] starts 
+at an offset of 12. That being said, we know the array is stored between an offset of 12 and an offsetof 32 leaving 20 bytes. Because sizeof(short) = 2, 20/2 = 10 meaing that A<=10.
+However, because the alignment of u is 8 because it is a long, we know then that 6 <= A <= 10. 
+
+At this point we aren't sure of the exact value of A and B because of how alignment works, they dont' have to fill the entire offset gap, and there can be spaces of bytes filled with junk.
+
+We now go the last line of assembly code which tells us that 4*A*B <= 184 meaning that  45 <= A*B <= 46 as y is a long with alignment and size 8.
+
+(We konw that the previous element of as struct has to end at a multiple of where the next element can begin based on its alignment.)
+
+Solving the inequalities:
+5 <= B <= 8
+6 <= A <= 10
+45 <= A*B <= 46
+
+results in a unique solution, A = 9, B = 5.

@@ -1,0 +1,54 @@
+Sagar Doshi
+UID: 604901376
+
+answers.txt
+
+1) 
+The exact mathematical result that we expect is -2305843009802285360
+The value in rax at the end of trace is 9223372034500410178.
+However, the value in %rdi AND %rbp at the end of the trace is the correct mathematical answer, -2305843009802285360 meaning that the issue we are looking for is that the data was not transferred correctly in between registeres.
+
+This leads us to the following offending line in the trace.
+54e014	48 8d 04 ad 02 00 00 00	lea 0x2(,%rbp,4),%rax	rax=7fffffff73ab3b42
+
+This line is the last line in which rax is modified, and it is attempting to move the data in rbp (the correct answer) to rax, the return register.
+
+Why does the compiler use lea rather than a simple move instruction in this case? Using mov %rbp, %rax would solve our problem.
+
+The answer lies in the fact that arith_driver, and thus Ftimes returns a Lisp_Object (rather than a long long)
+This object undergoes a 2 bit taggging as done in many interpreted languages (LIKE ELISP!).
+
+Evidence of this tagging is seen in the trace in the following lines, when a right shifting of 2 occurs.
+54df49	48 c1 ff 02	sar $0x2,%rdi	rdi=4a85d2d0
+54df49	48 c1 ff 02	sar $0x2,%rdi	rdi=ffffffff9212e6c1
+This leaves 62 bits rather than the needed 64 for the answer, thus the lea instruction is only moving over a part of the data in %rbp,rather than the actual answer.
+
+
+
+2)
+Looking at data.c we find the following lines of code near line 3888
+ 
+Vmost_negative_fixnum = make_number (MOST_NEGATIVE_FIXNUM);
+make_symbol_constant (intern_c_string ("most-negative-fixnum"));
+
+THerefore, we need to serach for the constant MOST_NEGATIVE_FIXNUM which leads us to the lisp.h file.
+
+in lisp.h, we find on line 935 the definition of MOST_NEGATIVE_FIXNUM and MOST_POSITIVE_FIXNUM and we see they are defined based upon the EMACS constants for the upper and lower limits of numbers. These are constants defined in terms of the 
+62 bit limitation, so this number is -2^61.
+
+
+
+3) 
+MOST_POSITIVE_FIXNUM is the hex pattern : 0x7FFFFFFFFFFFFFFF
+multiplying this by itself will yield the hex pattern
+0x3FFFFFFFFFFFFFFC000000000000001
+But this object is then truncated to the appropriate 62 bit limit leaving 000....0001.
+Now u multiply 1 by most-postiive fixnum and you get most-positive fixnum.
+BUT The same process is repeated again for most-positive-fixnum*most-positive-fixnum = 1
+Now you are left with the result of the same overflowed multiplication.
+Thus the final printed statement (which is a Lisp_Object) is 1
+
+
+
+4) EMACS already has overflow checking coded in, but the issue is that if we -fwrapv the overflow checks will not be activated  because now overflow is "allowed". We won't get any runtime/compilation errors and the genereated assembly will not be significantly different from the original code. 
+However, because EMACS' overflow checking will be essentially disabled, mathematically incorrect asnwers will occur when overflow occurs.

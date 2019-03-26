@@ -1,0 +1,25 @@
+Sagar Doshi
+UID: 604901376
+HW5 - answer.txt
+
+12.17
+A) The bug is that main never waits for the thread it created.
+
+B) 
+int main() {
+  pthread_t tid;
+  
+  Pthread_create(&tid, NULL, thread, NULL);
+
+  Pthread_exit(NULL);
+}
+
+____________________________________________________________________________
+
+12.25
+
+Looking at the code for echo_cnt, it IS thread-safe. The mutex (binary sempaphore) properly protects byte_cnt with P and V operations
+such that only one thread can modify byte_cnt at a time
+
+However, the function is NOT re-entrant. Each call to the function SHARES the same mutex meaning that function calls are NOT independent of one another, they share
+some semblance of "state".

@@ -1,0 +1,28 @@
+A. Offsets of stuff in the union - the general idea is that the base offset for  every struct is 0 as this is a union. Then the offset of members within the struct is based on the size of sstuff in the struct.
+
+e1.p : 0
+e1.y : 8
+
+e2.x : 0
+e2.next : 8
+
+
+
+B. How many total bytes. 8 + 8 = 16.
+
+16 Total bytes.
+
+C. C code for proc - this was just a matter of tracing through the assembly code, and undesrtanding that (expr) = dereferencing a pointer. From there we juts have  to work with the offsets that we found in part A of this question.
+
+How we konw something is a poitner p/next or an int x/y is based on what the command does (derefernecing vs subtracting) and the offsets.
+
+1. u->e2.next goes to %rdx
+2. *(up->e2.next) goes to %rdx
+3. *(*(up->e2.next).e1.p) goes to %rdx
+4. *(up->e2.next).e1.y is subtracted from what's in %rdx
+5. Move whatever was in %rdx to up->e2.x
+
+
+void proc (union ele * up) {
+	up->e2.x = *(*(up->e2.next).e1.p) - *(up->e2.next).e1.y;
+}

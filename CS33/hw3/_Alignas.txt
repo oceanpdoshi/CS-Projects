@@ -1,0 +1,6 @@
+The value of the expression returns 16. This is because of the way alignment works.
+
+The first character is at offset 0. The next char b, is specified to have an alignemnt of 8, so it is moved to an offset of 8. 
+Finally the last char c is placed in between an offset of 9.  Bytes that do not contain a char are filled with junk.
+Because the farthest offset of a data member is a number betweeen 8 and 16 and because the largest alignment of a data member in the struct is 8,
+we have to round the entire size up to the next multiple of 8, which is 16. Thus the size of that struct is 16.

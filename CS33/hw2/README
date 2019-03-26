@@ -1,0 +1,9 @@
+Sagar Doshi
+UID: 604901376
+
+Just an note about the first problem in the homework.
+
+My solution works if I use the -O or -O1 flag, but not the -O2 flag. I presume this is the case 
+because GCC does not optimize enough on the -O2 setting to use the conditional data transfer. 
+
+I hope that this solution is sufficient, and that it doesn't have to work on all compilation flags of gcc.
